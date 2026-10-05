@@ -47,18 +47,25 @@ bool Bootstrap(std::string& status) {
     // Script functions get their code pointers while the engine finishes
     // loading, so keep scanning for a while before giving up on them.
     bool functionsMissing = ok && r.layout.funcFunc < 0;
+    bool waitingForFunctions = false;
     if (functionsMissing) {
         if (!partialSince) partialSince = NowMs();
         if (NowMs() - partialSince < 120000) {
             ok = false;
+            waitingForFunctions = true;
             reason = "engine found, waiting for its script functions to load";
         }
     }
 
-    // Log the scan report on success, and on failure only when the reason
-    // changes (or every 100 attempts) so a slow start does not flood the log.
-    std::string key = ok ? std::string("ok") : r.notes.empty() ? reason : r.notes.back();
-    if (ok || key != lastLogged || attempt % 100 == 1) {
+    // Log the scan report only when the outcome changes (or every 100
+    // attempts), so neither a slow start nor the later rescans for the
+    // function layout flood the log.
+    std::string key = ok                  ? std::string(functionsMissing ? "ok, no functions" : "ok")
+                      : waitingForFunctions ? reason
+                      : r.notes.empty()     ? reason
+                                            : r.notes.back();
+    bool changed = key != lastLogged;
+    if (changed || attempt % 100 == 1) {
         for (const std::string& n : r.notes) LOGI("[scan %d] %s", attempt, n.c_str());
         lastLogged = key;
     }
@@ -70,10 +77,12 @@ bool Bootstrap(std::string& status) {
         status = "engine layout incomplete";
         return false;
     }
-    if (functionsMissing)
-        LOGE("UFunction layout still unknown after two minutes - functions cannot be called or hooked. Please send "
-             "this log.");
-    LOGI("Engine layout: %s", r.layout.Describe().c_str());
+    if (changed) {
+        if (functionsMissing)
+            LOGE("UFunction layout still unknown after two minutes - functions cannot be called or hooked yet. "
+                 "Please send this log.");
+        LOGI("Engine layout: %s", r.layout.Describe().c_str());
+    }
     status = "ready";
     return true;
 }

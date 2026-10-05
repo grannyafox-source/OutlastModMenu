@@ -222,6 +222,8 @@ void SaveIfChanged() {
 
 void OpenMenu(bool open) { SetOpen(open); }
 bool IsMenuOpen() { return g_open; }
+int PageCount() { return kPageCount; }
+void SelectPage(int index) { g_page = Clamp(index, 0, kPageCount - 1); }
 
 void Setup() {
     LoadHotkeys();

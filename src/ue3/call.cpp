@@ -169,6 +169,17 @@ void Call::Prepare() {
 
 bool Call::HasParam(const char* param) const { return fn_ && FindProperty(fn_, param); }
 
+std::string Call::StructParam(const char* structName, int nth) const {
+    if (!fn_) return std::string();
+    for (UField* f : Fields(fn_, false)) {
+        if (!IsProperty(f) || PropType(f) != "StructProperty") continue;
+        UStruct* st = PropStruct(f);
+        if (!st || Name(st) != structName) continue;
+        if (nth-- == 0) return Name(f);
+    }
+    return std::string();
+}
+
 uint8_t* Call::Param(const char* name, const char* type, UProperty** outProp) {
     if (!fn_) return nullptr;
     UProperty* p = FindProperty(fn_, name);

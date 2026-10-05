@@ -51,9 +51,18 @@ constexpr uintptr_t kProcessInternal = kCodeBase + 0x1000;
 
 class World : public omm::mem::Oracle {
 public:
-    explicit World(const Config& c) : c_(c) {
-        dataSection_.assign(0x10000, 0);
-        Register(dataSection_.data(), dataSection_.size());
+    explicit World(const Config& c, uint8_t* externalData = nullptr, size_t externalSize = 0) : c_(c) {
+        // The engine's global tables live in the executable's data section;
+        // tests that scan a real module pass a buffer from their own .bss.
+        if (externalData) {
+            data_ = externalData;
+            dataSize_ = externalSize;
+        } else {
+            dataSection_.assign(0x10000, 0);
+            data_ = dataSection_.data();
+            dataSize_ = dataSection_.size();
+        }
+        Register(data_, dataSize_);
         // Mandatory leading names.
         for (const char* n : {"None", "ByteProperty", "IntProperty", "BoolProperty", "FloatProperty", "ObjectProperty",
                               "NameProperty", "DelegateProperty", "ClassProperty", "ArrayProperty", "StructProperty",
@@ -134,9 +143,9 @@ public:
     void Publish(size_t namesOff, size_t objectsOff) {
         namesArray_ = Alloc((names_.size() + 16) * P);
         for (size_t i = 0; i < names_.size(); ++i) Put<uintptr_t>(namesArray_ + i * P, names_[i]);
-        objectsArray_ = Alloc((objects_.size() + 16) * P);
+        objectsArray_ = Alloc((objects_.size() + 64) * P);
         for (size_t i = 0; i < objects_.size(); ++i) Put<uintptr_t>(objectsArray_ + i * P, objects_[i]);
-        uintptr_t ds = reinterpret_cast<uintptr_t>(dataSection_.data());
+        uintptr_t ds = reinterpret_cast<uintptr_t>(data_);
         // Junk: a smaller array of names and a plausible-looking array.
         Put<uintptr_t>(ds + 0x40, namesArray_);
         Put<int32_t>(ds + 0x40 + P, 3);
@@ -146,14 +155,28 @@ public:
         Put<int32_t>(ds + namesOff + P + 4, static_cast<int32_t>(names_.size() + 16));
         Put<uintptr_t>(ds + objectsOff, objectsArray_);
         Put<int32_t>(ds + objectsOff + P, static_cast<int32_t>(objects_.size()));
-        Put<int32_t>(ds + objectsOff + P + 4, static_cast<int32_t>(objects_.size() + 16));
+        Put<int32_t>(ds + objectsOff + P + 4, static_cast<int32_t>(objects_.size() + 64));
         namesAddr_ = ds + namesOff;
         objectsAddr_ = ds + objectsOff;
     }
 
     omm::mem::Range DataRange() const {
-        uintptr_t b = reinterpret_cast<uintptr_t>(dataSection_.data());
-        return {b, b + dataSection_.size()};
+        uintptr_t b = reinterpret_cast<uintptr_t>(data_);
+        return {b, b + dataSize_};
+    }
+
+    const std::vector<uintptr_t>& Objects() const { return objects_; }
+
+    // Adds an object after Publish (e.g. an actor spawned while the game
+    // runs): it goes into the published GObjects array, which was allocated
+    // with spare room.
+    uintptr_t SpawnObject(const std::string& name, int32_t number, uintptr_t cls, uintptr_t outer, size_t size) {
+        uintptr_t obj = Object(name, cls, outer, size);
+        Put<int32_t>(obj + c_.objName + 4, number);
+        size_t idx = objects_.size() - 1;
+        Put<uintptr_t>(objectsArray_ + idx * P, obj);
+        Put<int32_t>(objectsAddr_ + P, static_cast<int32_t>(objects_.size()));
+        return obj;
     }
 
     uintptr_t NamesAddr() const { return namesAddr_; }
@@ -166,6 +189,8 @@ private:
     std::map<uintptr_t, size_t> blocks_;
     std::vector<std::unique_ptr<uint8_t[]>> storage_;
     std::vector<uint8_t> dataSection_;
+    uint8_t* data_ = nullptr;
+    size_t dataSize_ = 0;
     std::vector<uintptr_t> names_;
     std::map<std::string, int32_t> nameIdx_;
     std::vector<uintptr_t> objects_;

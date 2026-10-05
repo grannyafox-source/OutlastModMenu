@@ -176,7 +176,8 @@ DWORD WINAPI InitThread(LPVOID selfModule) {
             // Functions can't be hooked without the UFunction layout; keep
             // looking for it (script classes may still be linking).
             how = "the engine's function layout is not known yet";
-            if (NowMs() - lastRescan > 5000) {
+            uint64_t every = NowMs() - start < 5 * 60 * 1000 ? 5000 : 30000;
+            if (NowMs() - lastRescan > every) {
                 lastRescan = NowMs();
                 std::string st;
                 guard::Run("engine rescan", [&] { ue3::Bootstrap(st); });

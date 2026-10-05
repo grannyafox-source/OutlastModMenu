@@ -149,8 +149,12 @@ bool GetViewPoint(FVector& loc, FRotator& rot, float& fov) {
     if (!pc) return false;
     Call c(pc, "GetPlayerViewPoint");
     if (!c.Ok() || !c.Invoke()) return false;
-    loc = c.OutVector("POVLocation");
-    rot = c.OutRotator("POVRotation");
+    // PlayerController names them POVLocation/POVRotation, Controller
+    // out_Location/out_Rotation; go by type so any override works.
+    std::string locParam = c.StructParam("Vector"), rotParam = c.StructParam("Rotator");
+    if (locParam.empty() || rotParam.empty()) return false;
+    loc = c.OutVector(locParam.c_str());
+    rot = c.OutRotator(rotParam.c_str());
     Call f(pc, "GetFOVAngle");
     fov = (f.Ok() && f.Invoke()) ? f.RetFloat() : 90.f;
     if (!(fov > 1.f && fov < 179.f)) fov = 90.f;

@@ -12,5 +12,7 @@ bool OnHotkey(int vk, bool down, bool repeat);
 
 void OpenMenu(bool open);
 bool IsMenuOpen();
+int PageCount();
+void SelectPage(int index);  // e.g. from a hotkey or a test
 
 }  // namespace omm::ui

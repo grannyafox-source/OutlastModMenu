@@ -34,7 +34,8 @@ int main() {
     EXPECT(!omm::guard::Run("null read", [&] { value = Deref(bad); }));
     EXPECT(omm::guard::FaultCount() == 1);
     EXPECT(!omm::guard::Run("deep write", [&] { Deep(20, bad); }));
-    EXPECT(!omm::guard::Run("write", [&] { *reinterpret_cast<volatile int*>(0x20) = 1; }));
+    volatile int* volatile badWrite = reinterpret_cast<volatile int*>(0x20);
+    EXPECT(!omm::guard::Run("write", [&] { *badWrite = 1; }));
 
     // Nested: the inner fault is caught by the inner guard only.
     bool inner = true, outerOk = false;

@@ -66,6 +66,10 @@ public:
     FRotator OutRotator(const char* param);
 
     bool HasParam(const char* param) const;
+    // Name of the nth parameter whose type is the given struct ("Vector",
+    // "Rotator"...), for functions whose parameter names vary between
+    // overrides. Empty when there is none.
+    std::string StructParam(const char* structName, int nth = 0) const;
     const std::string& Error() const { return error_; }
 
 private:

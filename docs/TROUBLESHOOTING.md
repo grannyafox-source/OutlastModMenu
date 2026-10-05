@@ -15,6 +15,13 @@ menu's **Diagnostics** page shows the same information in game.
 **The log ends with "looking for the engine" / "Engine not found".** The engine scanner couldn't recognise
 this build of the game. Please report it with the full log - the scanner notes in it say which step failed.
 
+**The menu says "frame hook: the engine's function layout is not known yet" / the log says "UFunction layout
+still unknown".** The mod found the engine but not the place where it stores function code pointers, so it
+can't run anything in the game yet. It keeps retrying for a few minutes while the game loads. If it never gets
+past this, please report it with the full log: the `UFunction::Func not identified` line lists what the scanner
+saw, which is what's needed to fix it. (Version 1.0.0 failed here on the Steam version with "could not hook
+Function Engine.GameViewportClient.PostRender" - fixed in 1.0.1.)
+
 **The log says "Frame hook installed" but the menu doesn't open.**
 * Look for "Overlay initialised on Direct3D 9" in the log. If it's missing, another overlay or wrapper may
   be blocking the hook; try disabling other overlays (MSI Afterburner/RTSS, Discord, GeForce Experience).
@@ -47,6 +54,15 @@ that option silently does nothing - the rest keep working. Some things depend on
 * Hotkeys are ignored while you type in a text box in the menu.
 
 ## Crashes
+
+Everything the mod does inside the game runs behind a crash guard: if a step fails (for example because the
+game freed an object at the wrong moment), the log gets a line like
+`Recovered from a crash in enemy options: access violation at OLGame.exe+0x1A2B3C`, the game keeps running,
+and that part of the mod pauses for a few seconds. A part that fails three times within two minutes is switched
+off until you restart the game (the menu tells you which). Those lines are worth reporting even when nothing
+visible went wrong.
+
+If the game itself still crashes:
 
 1. Remove `dinput8.dll` and check that the game runs without the mod.
 2. Put it back and start again: does it crash right away, when opening the menu, or after using an option?

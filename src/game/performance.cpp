@@ -8,6 +8,8 @@
 #include "../core/strutil.h"
 #include "../core/sync.h"
 
+#include <set>
+
 namespace omm::game::perf {
 
 using namespace ue3;
@@ -39,6 +41,7 @@ const Setting kSettings[] = {
 const char* const kExpensiveEffects[] = {"AmbientOcclusionEffect", "MotionBlurEffect"};
 
 Level g_applied = Level::Off;
+std::set<std::string> g_changed;  // settings the current level changed (restored on the way back)
 Mutex g_reportLock;
 std::vector<std::string> g_report;
 
@@ -95,8 +98,9 @@ void Update(Level wanted) {
         const char* v = wanted == Level::Balanced ? s.balanced : (wanted == Level::Potato ? s.potato : nullptr);
         if (v) {
             Scale(s.name, v);
-        } else if (g_applied != Level::Off) {
-            // Back to what the game started with.
+            g_changed.insert(s.name);
+        } else if (g_changed.erase(s.name)) {
+            // Back to what the game started with (its config file's value).
             std::string orig = haveIni ? ini.Get("SystemSettings", s.name).value_or(s.fallback) : s.fallback;
             Scale(s.name, orig);
         }

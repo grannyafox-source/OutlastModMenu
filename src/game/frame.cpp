@@ -35,10 +35,12 @@ FrameStats g_stats;
 
 // Each part of the frame runs under the crash guard. A part that faults is
 // paused for a few seconds (objects may have been freed during a level
-// change); after three faults it stays off for the session.
+// change); one that faults three times within two minutes stays off for the
+// session. Isolated faults, e.g. one per level change, are forgiven.
 struct Phase {
     const char* name;
     int faults = 0;
+    uint64_t lastFault = 0;
     uint64_t pausedUntil = 0;
     bool disabled = false;
 };
@@ -47,12 +49,15 @@ template <typename F>
 bool RunPhase(Phase& p, F&& f) {
     if (p.disabled || NowMs() < p.pausedUntil) return false;
     if (guard::Run(p.name, f)) return true;
+    uint64_t now = NowMs();
+    if (now - p.lastFault > 120000) p.faults = 0;
+    p.lastFault = now;
     if (++p.faults >= 3) {
         p.disabled = true;
-        LOGE("'%s' failed %d times and was switched off for this session", p.name, p.faults);
+        LOGE("'%s' failed %d times in two minutes and was switched off for this session", p.name, p.faults);
         Notify(str::Format("Mod error in '%s' - switched off to protect the game (see the log)", p.name), 8.f);
     } else {
-        p.pausedUntil = NowMs() + 5000;
+        p.pausedUntil = now + 5000;
         Notify(str::Format("Mod error in '%s' - retrying in a moment", p.name), 4.f);
     }
     return false;

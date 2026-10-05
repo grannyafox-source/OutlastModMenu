@@ -45,7 +45,7 @@
 #  define OMM_PRINTF(fmt, args)
 #endif
 
-#define OMM_VERSION_STRING "1.0.0"
+#define OMM_VERSION_STRING "1.0.1"
 #define OMM_NAME "Outlast Mod Menu"
 
 namespace omm {

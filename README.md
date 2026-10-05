@@ -52,7 +52,7 @@ game's main menu, pause menu or **Options** screen is open and shows a **MOD MEN
 
 ## Install
 
-1. Take `release/OutlastModMenu-v1.0.0.zip` from this repository (built from this source by `build.sh`), or
+1. Take `release/OutlastModMenu-v1.0.1.zip` from this repository (built from this source by `build.sh`), or
    build it yourself (below), and unzip it.
 2. Copy the contents of `Binaries\Win64` into `...\Outlast\Binaries\Win64` and `Binaries\Win32` into
    `...\Outlast\Binaries\Win32` (each copy only loads into the matching game).
@@ -78,9 +78,14 @@ Requirements: CMake 3.16+, Ninja (optional), MinGW-w64 for both architectures, z
 
 ```sh
 sudo apt install cmake ninja-build g++-mingw-w64 zip   # Debian / Ubuntu
-./build.sh                                              # tests + both DLLs + dist/OutlastModMenu-v1.0.0.zip
+./build.sh                                              # tests + both DLLs + dist/OutlastModMenu-v1.0.1.zip
 ./tests/run_tests.sh                                    # unit tests only (ASan/UBSan, 64- and 32-bit)
+./tests/win/run.sh                                      # Windows tests under Wine: crash guard + end-to-end run
 ```
+
+`tests/win/run.sh` builds the whole mod into a test program that fakes the engine (objects, script functions,
+`ProcessEvent`, the viewport's `PostRender`) and runs it under Wine for both 64- and 32-bit: the loader finds
+the fake engine, hooks the frame and drives every feature and menu page. It needs `wine64` and `wine32`.
 
 The CMake project also has settings for Visual Studio 2022 (`cmake -S . -B build -A x64` or `-A Win32`), but
 only the MinGW build has been tested.
