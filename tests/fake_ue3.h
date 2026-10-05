@@ -172,6 +172,12 @@ private:
     uintptr_t namesArray_ = 0, objectsArray_ = 0, namesAddr_ = 0, objectsAddr_ = 0;
 };
 
+// Variations of the function table seen in real games.
+struct BuildOptions {
+    int extraNatives = 0;         // e.g. Core's hundreds of native operators
+    bool scriptUnlinked = false;  // script functions' Func not set yet (scan during start-up)
+};
+
 // Populates a world with the classes, properties and functions the scanner
 // relies on, plus thousands of filler objects.
 struct Graph {
@@ -185,9 +191,10 @@ struct Graph {
     uintptr_t actorInstance = 0, pawnInstance = 0;
     int32_t locationOffset = 0;
     std::map<std::string, uintptr_t> propClasses;
+    std::vector<uintptr_t> scriptFuncs;
 };
 
-inline Graph Build(World& w) {
+inline Graph Build(World& w, const BuildOptions& opt = BuildOptions()) {
     const Config& c = w.Cfg();
     Graph g;
     // Class objects are created with a temporary null class, then patched.
@@ -275,11 +282,16 @@ inline Graph Build(World& w) {
     w.Put<uint16_t>(g.setLocation + c.funcRet(), 12);
     func(g.actor, "Destroy", 0x403, 279, nativeThunk += 0x40);
     func(g.actor, "Spawn", 0x403, 0, nativeThunk += 0x40);
-    func(g.actor, "PostBeginPlay", 0x802, 0, kProcessInternal);
+    const uintptr_t scriptThunk = opt.scriptUnlinked ? 0 : kProcessInternal;
+    g.scriptFuncs.push_back(func(g.actor, "PostBeginPlay", 0x802, 0, scriptThunk));
     for (int i = 0; i < 400; ++i)
-        func(i % 2 ? g.pawn : g.controller, ("ScriptFunc" + std::to_string(i)).c_str(), 0x2, 0, kProcessInternal);
+        g.scriptFuncs.push_back(
+            func(i % 2 ? g.pawn : g.controller, ("ScriptFunc" + std::to_string(i)).c_str(), 0x2, 0, scriptThunk));
     for (int i = 0; i < 120; ++i) func(g.playerController, ("NativeFunc" + std::to_string(i)).c_str(), 0x403, 0,
                                        nativeThunk += 0x40);
+    for (int i = 0; i < opt.extraNatives; ++i)
+        func(g.objectClass, ("Operator" + std::to_string(i)).c_str(), 0x3403, static_cast<uint16_t>(i % 2 ? 0 : 100 + i % 500),
+             nativeThunk += 0x40);
 
     g.locationOffset = locOff;
     g.actorInstance = w.Object("Actor_7", g.actor, g.engine, 0x600);

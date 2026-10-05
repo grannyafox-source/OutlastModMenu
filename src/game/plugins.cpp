@@ -5,6 +5,7 @@
 #include "state.h"
 
 #include "../core/fileutil.h"
+#include "../core/guard.h"
 #include "../core/log.h"
 #include "../core/paths.h"
 #include "../core/strutil.h"
@@ -207,7 +208,17 @@ void OnGameFrame() {
         if (g_frameCallbacks.empty()) return;
         copy = g_frameCallbacks;
     }
-    for (const Callback& c : copy) c.fn(c.user);
+    for (const Callback& c : copy) {
+        if (guard::Run("plugin frame callback", [&] { c.fn(c.user); })) continue;
+        // A plugin that crashes is not called again.
+        LockGuard lock(g_lock);
+        for (auto it = g_frameCallbacks.begin(); it != g_frameCallbacks.end(); ++it)
+            if (it->fn == c.fn && it->user == c.user) {
+                g_frameCallbacks.erase(it);
+                break;
+            }
+        game::Notify("A plugin crashed and was disabled - see the log", 6.f);
+    }
 }
 
 void DrawMenuSections() {

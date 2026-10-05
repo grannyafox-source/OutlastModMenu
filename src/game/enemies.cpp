@@ -97,14 +97,20 @@ UObject* ResolveMesh(const std::string& path) {
 }
 
 std::string RuleFor(UObject* pawn) {
-    LockGuard lock(g_rulesLock);
-    if (g_rules.empty()) return std::string();
-    for (UStruct* c = ClassOf(pawn); c; c = SuperOf(c)) {
-        auto it = g_rules.find(Name(c));
-        if (it != g_rules.end()) return it->second;
+    // Copy first: game memory is read below, and no lock may be held while
+    // doing that (see core/guard.h).
+    ModelRules rules;
+    {
+        LockGuard lock(g_rulesLock);
+        if (g_rules.empty()) return std::string();
+        rules = g_rules;
     }
-    auto all = g_rules.find("AllEnemies");
-    return all != g_rules.end() ? all->second : std::string();
+    for (UStruct* c = ClassOf(pawn); c; c = SuperOf(c)) {
+        auto it = rules.find(Name(c));
+        if (it != rules.end()) return it->second;
+    }
+    auto all = rules.find("AllEnemies");
+    return all != rules.end() ? all->second : std::string();
 }
 
 void ApplyMeshRule(const Tracked& t) {

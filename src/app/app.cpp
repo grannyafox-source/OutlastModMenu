@@ -3,6 +3,7 @@
 #if OMM_WINDOWS
 
 #include "../core/fileutil.h"
+#include "../core/guard.h"
 #include "../core/log.h"
 #include "../core/paths.h"
 #include "../core/settings.h"
@@ -40,16 +41,17 @@ void PublishStatus(const std::string& status) {
     game::state::PublishSnapshot(std::move(snap));
 }
 
-// Primary per-frame hook: GameViewportClient.PostRender.
+// Primary per-frame hook: GameViewportClient.PostRender. Each part of the
+// frame has its own crash guard; this outer one catches anything else.
 void OnViewportPostRender(ue3::UObject* self) {
     g_lastPrimaryFrameMs = NowMs();
-    game::OnGameFrame(self);
+    guard::Run("frame", [&] { game::OnGameFrame(self); });
 }
 
 // Fallback: HUD.PostRender, used only while the primary hook is silent.
 void OnHudPostRender(ue3::UObject*) {
     if (NowMs() - g_lastPrimaryFrameMs < 500) return;
-    game::OnGameFrame(nullptr);
+    guard::Run("frame", [] { game::OnGameFrame(nullptr); });
 }
 
 ue3::UObject* FindViewportClient() {
@@ -123,6 +125,7 @@ bool ShouldStart(HMODULE self) {
 DWORD WINAPI InitThread(LPVOID selfModule) {
     paths::Init(selfModule);
     log::Init(fs::Join(paths::ModDir(), "OutlastModMenu.log"));
+    guard::Install();
     LOGI("%s %s (%s) loaded into %s", OMM_NAME, OMM_VERSION_STRING, OMM_X64 ? "64-bit" : "32-bit",
          paths::GameExePath().c_str());
     LOGI("Mod folder: %s", paths::ModDir().c_str());
@@ -143,12 +146,14 @@ DWORD WINAPI InitThread(LPVOID selfModule) {
     if (!render::InstallHooks()) LOGE("No graphics API could be hooked - the menu will not be visible");
 
     // Wait for the engine's object tables (they appear a moment after start).
+    // The engine is still loading while we look, so every pass is guarded.
     std::string status;
     uint64_t start = NowMs();
-    int attempts = 0;
-    while (!ue3::Bootstrap(status)) {
+    for (;;) {
+        bool found = false;
+        guard::Run("engine scan", [&] { found = ue3::Bootstrap(status); });
+        if (found) break;
         PublishStatus("looking for the engine: " + status);
-        if (++attempts % 40 == 0) LOGI("Still waiting for the engine (%s)", status.c_str());
         if (NowMs() - start > 10 * 60 * 1000) {
             LOGE("Engine not found after 10 minutes - giving up. Status: %s", status.c_str());
             PublishStatus("engine not found (see the log)");
@@ -160,14 +165,29 @@ DWORD WINAPI InitThread(LPVOID selfModule) {
 
     // Hook the per-frame event once the viewport exists.
     PublishStatus("waiting for the game viewport");
-    std::string how;
-    while (!HookFrame(how)) {
-        if (!how.empty()) {
-            LOGE("Frame hook failed: %s", how.c_str());
-            PublishStatus("frame hook failed: " + how);
-            how.clear();
+    std::string how, lastError;
+    uint64_t lastRescan = NowMs();
+    for (;;) {
+        bool hooked = false;
+        how.clear();
+        guard::Run("frame hook setup", [&] { hooked = HookFrame(how); });
+        if (hooked) break;
+        if (ue3::L().funcFunc < 0) {
+            // Functions can't be hooked without the UFunction layout; keep
+            // looking for it (script classes may still be linking).
+            how = "the engine's function layout is not known yet";
+            if (NowMs() - lastRescan > 5000) {
+                lastRescan = NowMs();
+                std::string st;
+                guard::Run("engine rescan", [&] { ue3::Bootstrap(st); });
+            }
         }
-        Sleep(250);
+        if (!how.empty() && how != lastError) {
+            LOGE("Frame hook not installed yet: %s", how.c_str());
+            PublishStatus("frame hook: " + how);
+            lastError = how;
+        }
+        Sleep(500);
     }
     LOGI("Frame hook installed on %s", how.c_str());
     PublishStatus("waiting for the first frame");
@@ -185,7 +205,7 @@ DWORD WINAPI InitThread(LPVOID selfModule) {
             LOGW("The frame hook has not fired yet - installing fallback hooks");
             // Nothing on the game thread runs mod code yet, so this thread may
             // still use the reflection layer.
-            InstallFallbackHooks();
+            guard::Run("fallback hooks", [] { InstallFallbackHooks(); });
         }
     }
 }

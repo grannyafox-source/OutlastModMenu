@@ -8,6 +8,7 @@
 #include "plugins.h"
 #include "state.h"
 
+#include "../core/guard.h"
 #include "../core/log.h"
 #include "../core/settings.h"
 #include "../core/strutil.h"
@@ -31,6 +32,48 @@ float g_rouletteTimer = 0.f;
 
 Mutex g_statsLock;
 FrameStats g_stats;
+
+// Each part of the frame runs under the crash guard. A part that faults is
+// paused for a few seconds (objects may have been freed during a level
+// change); after three faults it stays off for the session.
+struct Phase {
+    const char* name;
+    int faults = 0;
+    uint64_t pausedUntil = 0;
+    bool disabled = false;
+};
+
+template <typename F>
+bool RunPhase(Phase& p, F&& f) {
+    if (p.disabled || NowMs() < p.pausedUntil) return false;
+    if (guard::Run(p.name, f)) return true;
+    if (++p.faults >= 3) {
+        p.disabled = true;
+        LOGE("'%s' failed %d times and was switched off for this session", p.name, p.faults);
+        Notify(str::Format("Mod error in '%s' - switched off to protect the game (see the log)", p.name), 8.f);
+    } else {
+        p.pausedUntil = NowMs() + 5000;
+        Notify(str::Format("Mod error in '%s' - retrying in a moment", p.name), 4.f);
+    }
+    return false;
+}
+
+Phase g_pWorld{"reading game objects"};
+Phase g_pLevel{"level change"};
+Phase g_pActions{"menu actions"};
+Phase g_pPlayer{"player options"};
+Phase g_pVisuals{"visual options"};
+Phase g_pWorldOpts{"world options"};
+Phase g_pEnemies{"enemy options"};
+Phase g_pRoulette{"teleport roulette"};
+Phase g_pPerf{"performance mode"};
+Phase g_pPause{"menu pause"};
+Phase g_pPlugins{"plugins"};
+Phase g_pSnapPlayer{"player status"};
+Phase g_pSnapMenu{"game menu detection"};
+Phase g_pSnapEnemies{"enemy list"};
+Phase g_pEsp{"ESP"};
+Phase g_pPurge{"cleanup"};
 
 // --- Pause while the mod menu is open ---------------------------------------------
 UObject* g_pausedWith = nullptr;  // PlayerReplicationInfo we put into WorldInfo.Pauser
@@ -117,42 +160,45 @@ void OnGameFrame(UObject* viewportClient) {
     if (dt > 0.25f) dt = 0.25f;  // hitches, loading screens
     ++g_frame;
 
-    RefreshWorld(viewportClient);
+    // Without a consistent view of the game objects nothing else can run.
+    if (!RunPhase(g_pWorld, [&] { RefreshWorld(viewportClient); })) return;
     const World& w = W();
     if (w.worldInfo != g_lastWorldInfo || w.pc != g_lastPc) {
         g_lastWorldInfo = w.worldInfo;
         g_lastPc = w.pc;
-        if (w.worldInfo && w.pc) OnWorldChanged();
+        if (w.worldInfo && w.pc) RunPhase(g_pLevel, [] { OnWorldChanged(); });
     }
 
-    RunQueued();
+    RunPhase(g_pActions, [] { RunQueued(); });
     ModState s = state::Shared();
 
     if (w.pc) {
-        ApplyPlayerFeatures(s);
-        ApplyVisualFeatures(s);
-        ApplyWorldFeatures(s, dt);
-        ApplyEnemyFeatures(s, dt);
-        Roulette(s, dt);
-        perf::Update(static_cast<perf::Level>(Clamp(s.perfLevel, 0, 2)));
+        RunPhase(g_pPlayer, [&] { ApplyPlayerFeatures(s); });
+        RunPhase(g_pVisuals, [&] { ApplyVisualFeatures(s); });
+        RunPhase(g_pWorldOpts, [&] { ApplyWorldFeatures(s, dt); });
+        RunPhase(g_pEnemies, [&] { ApplyEnemyFeatures(s, dt); });
+        RunPhase(g_pRoulette, [&] { Roulette(s, dt); });
+        RunPhase(g_pPerf, [&] { perf::Update(static_cast<perf::Level>(Clamp(s.perfLevel, 0, 2))); });
     }
-    ApplyMenuPause(s.pauseWhileMenuOpen && input::MenuOpen());
-    plugins::OnGameFrame();
+    RunPhase(g_pPause, [&] { ApplyMenuPause(s.pauseWhileMenuOpen && input::MenuOpen()); });
+    RunPhase(g_pPlugins, [] { plugins::OnGameFrame(); });
 
     Snapshot snap;
     snap.engineReady = true;
     snap.frame = g_frame;
-    snap.mapName = MapName();
-    FillPlayerSnapshot(snap);
-    FillMenuState(snap);
-    enemies::FillSnapshot(snap);
-    CollectEsp(s, snap);
-    snap.engineStatus = "running";
+    RunPhase(g_pSnapPlayer, [&] {
+        snap.mapName = MapName();
+        FillPlayerSnapshot(snap);
+    });
+    RunPhase(g_pSnapMenu, [&] { FillMenuState(snap); });
+    RunPhase(g_pSnapEnemies, [&] { enemies::FillSnapshot(snap); });
+    RunPhase(g_pEsp, [&] { CollectEsp(s, snap); });
+    snap.engineStatus = guard::FaultCount() ? "running (recovered from errors - see the log)" : "running";
     state::PublishSnapshot(std::move(snap));
 
     if (now - g_lastPurge > 2000) {
         g_lastPurge = now;
-        Overrides().Purge();
+        RunPhase(g_pPurge, [] { Overrides().Purge(); });
     }
 
     float ms = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - t0).count();

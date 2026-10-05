@@ -108,6 +108,50 @@ static void TestScanner(const fake::Config& cfg, const char* label) {
     CHECK(!u::FindName("NoSuchName_123", fn));
 }
 
+static void TestFunctionLayoutVariants() {
+    namespace u = omm::ue3;
+    auto isCode = [](uintptr_t a) { return a >= fake::kCodeBase && a < fake::kCodeBase + 0x10000000; };
+    {
+        std::printf("[scanner] native functions outnumber script functions\n");
+        fake::Config cfg;
+        fake::World w(cfg);
+        fake::BuildOptions opt;
+        opt.extraNatives = 4000;  // script functions are now ~9% of all functions
+        fake::Graph g = fake::Build(w, opt);
+        w.Publish(0x1800, 0x3400);
+        Scanner s(w, {w.DataRange()}, isCode);
+        CHECK(s.RunAll());
+        CHECK_EQ(s.Result().layout.funcFunc, cfg.funcFunc());
+        CHECK_EQ(s.Result().layout.funcFlags, cfg.funcFlags());
+        CHECK_EQ(s.Result().layout.funcNative, cfg.funcNative());
+        CHECK_EQ(s.Result().processInternal, fake::kProcessInternal);
+        CHECK(!s.Result().functionsPending);
+    }
+    {
+        std::printf("[scanner] script functions not linked yet\n");
+        fake::Config cfg;
+        fake::World w(cfg);
+        fake::BuildOptions opt;
+        opt.scriptUnlinked = true;
+        fake::Graph g = fake::Build(w, opt);
+        w.Publish(0x1800, 0x3400);
+        Scanner early(w, {w.DataRange()}, isCode);
+        CHECK(early.RunAll());  // names, objects and properties are usable already
+        CHECK(early.Result().layout.funcFunc < 0);
+        CHECK(early.Result().functionsPending);
+        CHECK_EQ(early.Result().layout.funcNative, cfg.funcNative());  // serialized data is already there
+        for (const std::string& n : early.Result().notes)
+            if (n.find("Func") != std::string::npos) std::printf("    note: %s\n", n.c_str());
+        // The engine links the classes: every script function now points at ProcessInternal.
+        for (uintptr_t f : g.scriptFuncs) w.Put<uintptr_t>(f + cfg.funcFunc(), fake::kProcessInternal);
+        Scanner later(w, {w.DataRange()}, isCode);
+        CHECK(later.RunAll());
+        CHECK_EQ(later.Result().layout.funcFunc, cfg.funcFunc());
+        CHECK(!later.Result().functionsPending);
+        CHECK(u::Init(later.Result()));
+    }
+}
+
 static void TestScannerRejectsGarbage() {
     std::printf("[scanner] empty data section\n");
     fake::Config cfg;
@@ -226,6 +270,8 @@ int main() {
     moved.objIndex = sizeof(void*) == 8 ? 0x34 : 0x1C;
     moved.objSize = sizeof(void*) == 8 ? 0x68 : 0x40;
     TestScanner(moved, "perturbed layout");
+
+    TestFunctionLayoutVariants();
 
     TestIniTweaks();
     TestModInstaller();

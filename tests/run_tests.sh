@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 SRC=(tests/test_main.cpp tests/test_files.cpp tests/stubs.cpp
      src/ue3/scanner.cpp src/ue3/engine.cpp
      src/core/ini.cpp src/core/strutil.cpp src/core/fileutil.cpp src/core/settings.cpp src/core/log.cpp
-     src/core/paths.cpp src/game/initweaks.cpp src/game/modloader.cpp)
+     src/core/paths.cpp src/core/guard.cpp src/game/initweaks.cpp src/game/modloader.cpp)
 OUT=${TMPDIR:-/tmp}/omm_tests
 CXX=${CXX:-g++}
 

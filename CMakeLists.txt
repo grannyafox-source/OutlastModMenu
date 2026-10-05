@@ -25,6 +25,7 @@ if(NOT WIN32)
             src/core/fileutil.cpp
             src/core/settings.cpp
             src/core/log.cpp
+            src/core/guard.cpp
             src/core/paths.cpp
             src/game/initweaks.cpp
             src/game/modloader.cpp)
@@ -68,6 +69,7 @@ set(OMM_SOURCES
     src/app/dllmain.cpp
     src/app/version.rc
     src/core/fileutil.cpp
+    src/core/guard.cpp
     src/core/ini.cpp
     src/core/log.cpp
     src/core/memory.cpp

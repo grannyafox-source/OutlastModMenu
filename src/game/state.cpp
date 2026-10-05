@@ -1,5 +1,6 @@
 #include "state.h"
 
+#include "../core/guard.h"
 #include "../core/settings.h"
 #include "../core/strutil.h"
 #include "../core/sync.h"
@@ -180,7 +181,9 @@ void RunQueued() {
         LockGuard lock(g_queueLock);
         work.swap(g_queue);
     }
-    for (auto& fn : work) fn();
+    for (auto& fn : work) {
+        if (!guard::Run("menu action", fn)) Notify("That action failed inside the game - see the log", 5.f);
+    }
 }
 
 void Notify(const std::string& text, float seconds) {

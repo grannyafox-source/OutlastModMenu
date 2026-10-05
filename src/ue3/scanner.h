@@ -26,6 +26,9 @@ struct ScanResult {
     uintptr_t gnames = 0;    // address of TArray<FNameEntry*>
     uintptr_t gobjects = 0;  // address of TArray<UObject*>
     uintptr_t processInternal = 0;
+    // The function layout could not be determined yet, most likely because
+    // script functions are not linked yet; scanning again later may succeed.
+    bool functionsPending = false;
     Layout layout;
     std::vector<std::string> notes;
 };

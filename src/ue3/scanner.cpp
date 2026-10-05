@@ -678,6 +678,7 @@ bool Scanner::DetectPropertyLayout() {
 // UFunction.
 
 bool Scanner::DetectFunctionLayout() {
+    r_.functionsPending = false;
     uintptr_t functionClass = FindObject("Function", "Class", "Core");
     if (!functionClass) {
         Note("Class Core.Function not found");
@@ -685,108 +686,160 @@ bool Scanner::DetectFunctionLayout() {
     }
     std::vector<uintptr_t> funcs;
     int32_t n = ObjectsNum();
-    for (int32_t i = 0; i < n && funcs.size() < 30000; ++i) {
+    for (int32_t i = 0; i < n && funcs.size() < 60000; ++i) {
         uintptr_t o = ObjectAt(i);
         if (o && ClassOf(o) == functionClass) funcs.push_back(o);
     }
     if (funcs.size() < 50) {
         Note("Too few UFunctions (%zu)", funcs.size());
+        r_.functionsPending = true;
         return false;
     }
-
-    // UFunction::Func: script functions all share UObject::ProcessInternal.
-    int bestOff = -1;
-    uintptr_t bestVal = 0;
-    size_t bestCount = 0;
-    for (int off = r_.layout.structChildren + static_cast<int>(P); off < r_.layout.structChildren + 0x180;
-         off += static_cast<int>(P)) {
-        std::unordered_map<uintptr_t, size_t> freq;
-        for (uintptr_t f : funcs) {
-            uintptr_t v = 0;
-            if (ReadPtr(f + off, v) && v) ++freq[v];
-        }
-        for (const auto& kv : freq) {
-            if (kv.second > bestCount && kv.second * 10 >= funcs.size() * 3 && isCode_(kv.first)) {
-                bestCount = kv.second;
-                bestVal = kv.first;
-                bestOff = off;
-            }
-        }
-    }
-    if (bestOff < 0) {
-        Note("UFunction::Func not identified");
-        return false;
-    }
-    r_.layout.funcFunc = bestOff;
-    r_.processInternal = bestVal;
-    Note("UFunction::Func at 0x%X, ProcessInternal=%p (%zu/%zu functions)", bestOff, reinterpret_cast<void*>(bestVal),
-         bestCount, funcs.size());
 
     uintptr_t setLoc = FindChild(actorClass_, "SetLocation");
     uintptr_t destroy = FindChild(actorClass_, "Destroy");
     uintptr_t spawn = FindChild(actorClass_, "Spawn");
     uintptr_t postBegin = FindChild(actorClass_, "PostBeginPlay");
+    const int ptr = static_cast<int>(P);
+    // UFunction's own members follow the (large) UStruct part.
+    const int lo = r_.layout.structChildren + ptr;
+    const int hi = r_.layout.structChildren + 0x300;
 
-    // iNative: SetLocation is native(267), Destroy native(279), Spawn has none.
+    // 1. iNative: SetLocation is native(267), Destroy native(279), Spawn has
+    //    none. Two exact 16-bit values make this match unambiguous.
     auto nativeOk = [&](int off) {
         uint16_t a = 0, b = 0, c = 1;
         return setLoc && destroy && spawn && ReadU16(setLoc + off, a) && ReadU16(destroy + off, b) &&
                ReadU16(spawn + off, c) && a == 267 && b == 279 && c == 0;
     };
-    int derivedNative = bestOff - (P == 8 ? 28 : 24);
-    if (nativeOk(derivedNative)) {
-        r_.layout.funcNative = derivedNative;
-    } else {
-        for (int off = bestOff - 0x60; off < bestOff; off += 2)
-            if (nativeOk(off)) {
-                r_.layout.funcNative = off;
-                break;
-            }
-    }
-    if (r_.layout.funcNative < 0) Note("UFunction::iNative not identified (non-fatal)");
+    int nativeOff = -1;
+    for (int off = lo; off < hi && nativeOff < 0; off += 2)
+        if (nativeOk(off)) nativeOff = off;
+    r_.layout.funcNative = nativeOff;
 
-    // FunctionFlags.
+    // 2. FunctionFlags - serialized with the function, so valid as soon as it
+    //    is loaded. SetLocation/Destroy/Spawn are native, PostBeginPlay is a
+    //    script event; every function with a native index must be FUNC_Native.
     auto flagsOk = [&](int off) {
-        uint32_t a = 0, b = 0, c = 0;
-        return setLoc && spawn && postBegin && ReadU32(setLoc + off, a) && ReadU32(spawn + off, b) &&
-               ReadU32(postBegin + off, c) && (a & (FUNC_Final | FUNC_Native)) == (FUNC_Final | FUNC_Native) &&
-               (b & FUNC_Native) && !(c & FUNC_Native) && (c & FUNC_Event);
+        uint32_t a = 0, b = 0, c = 0, d = 0;
+        return setLoc && spawn && postBegin && destroy && ReadU32(setLoc + off, a) && ReadU32(spawn + off, b) &&
+               ReadU32(postBegin + off, c) && ReadU32(destroy + off, d) &&
+               (a & (FUNC_Final | FUNC_Native)) == (FUNC_Final | FUNC_Native) && (b & FUNC_Native) &&
+               (d & FUNC_Native) && !(c & FUNC_Native) && (c & FUNC_Event);
     };
-    int derivedFlags = bestOff - (P == 8 ? 32 : 28);
-    if (flagsOk(derivedFlags)) {
-        r_.layout.funcFlags = derivedFlags;
-    } else {
-        for (int off = bestOff - 0x60; off < bestOff; off += 4)
-            if (flagsOk(off)) {
-                r_.layout.funcFlags = off;
-                break;
-            }
-    }
-    if (r_.layout.funcFlags < 0) Note("UFunction::FunctionFlags not identified (non-fatal)");
+    auto consistent = [&](int off) {
+        if (nativeOff < 0) return true;
+        size_t withIndex = 0, nativeFlag = 0;
+        for (uintptr_t f : funcs) {
+            uint16_t idx = 0;
+            uint32_t fl = 0;
+            if (!ReadU16(f + nativeOff, idx) || !idx || !ReadU32(f + off, fl)) continue;
+            ++withIndex;
+            if (fl & FUNC_Native) ++nativeFlag;
+        }
+        return withIndex == 0 || nativeFlag * 100 >= withIndex * 95;
+    };
+    int flagsOff = -1;
+    if (nativeOff >= 4 && flagsOk(nativeOff - 4) && consistent(nativeOff - 4)) flagsOff = nativeOff - 4;
+    for (int off = lo; off < hi && flagsOff < 0; off += 4)
+        if (flagsOk(off) && consistent(off)) flagsOff = off;
+    r_.layout.funcFlags = flagsOff;
 
-    // ParmsSize / ReturnValueOffset from SetLocation: (vector NewLocation) -> bool.
+    // 3. ParmsSize / ReturnValueOffset from SetLocation: (vector NewLocation) -> bool.
     uintptr_t retVal = setLoc ? FindChild(setLoc, "ReturnValue") : 0;
     int32_t retOff = -1;
     if (retVal) ReadI32(retVal + r_.layout.propOffset, retOff);
     if (retOff > 0) {
-        auto pr = [&](int parmsOff, int retFieldOff) {
+        auto pr = [&](int off) {
             uint16_t ps = 0, ro = 0;
-            return ReadU16(setLoc + parmsOff, ps) && ReadU16(setLoc + retFieldOff, ro) && ro == retOff &&
-                   ps == retOff + 4;
+            return ReadU16(setLoc + off, ps) && ReadU16(setLoc + off + 2, ro) && ro == retOff && ps == retOff + 4;
         };
-        int dp = bestOff - (P == 8 ? 14 : 10), dr = bestOff - (P == 8 ? 12 : 8);
-        if (pr(dp, dr)) {
-            r_.layout.funcParmsSize = dp;
-            r_.layout.funcRetOffset = dr;
-        } else {
-            for (int off = bestOff - 0x40; off + 2 < bestOff; off += 2)
-                if (pr(off, off + 2)) {
-                    r_.layout.funcParmsSize = off;
-                    r_.layout.funcRetOffset = off + 2;
-                    break;
-                }
+        int from = flagsOff >= 0 ? flagsOff + 4 : lo;
+        for (int off = from; off < from + 0x40 && r_.layout.funcParmsSize < 0; off += 2)
+            if (pr(off)) {
+                r_.layout.funcParmsSize = off;
+                r_.layout.funcRetOffset = off + 2;
+            }
+    }
+
+    // 4. Func. Every script (non-native) function points it at the same
+    //    UObject::ProcessInternal; natives point at their own exec thunks.
+    //    Natives are the majority in some games (Core alone has hundreds of
+    //    native operators), so only non-native functions vote when the flags
+    //    are known.
+    std::vector<uintptr_t> script, natives;
+    for (uintptr_t f : funcs) {
+        uint32_t fl = 0;
+        if (flagsOff >= 0 && ReadU32(f + flagsOff, fl)) (fl & FUNC_Native ? natives : script).push_back(f);
+    }
+    const std::vector<uintptr_t>& voters = (flagsOff >= 0 && script.size() >= 20) ? script : funcs;
+    struct Candidate {
+        int off = -1;
+        uintptr_t value = 0;
+        size_t count = 0, nonNull = 0;
+        bool code = false;
+    };
+    std::vector<Candidate> cands;
+    int start = flagsOff >= 0 ? flagsOff + 4 : lo;
+    start = (start + ptr - 1) & ~(ptr - 1);
+    for (int off = start; off < hi; off += ptr) {
+        std::unordered_map<uintptr_t, size_t> freq;
+        Candidate c;
+        c.off = off;
+        for (uintptr_t f : voters) {
+            uintptr_t v = 0;
+            if (ReadPtr(f + off, v) && v) {
+                ++freq[v];
+                ++c.nonNull;
+            }
+        }
+        for (const auto& kv : freq)
+            if (kv.second > c.count) {
+                c.count = kv.second;
+                c.value = kv.first;
+            }
+        if (c.count) {
+            c.code = isCode_(c.value);
+            cands.push_back(c);
         }
     }
+    std::sort(cands.begin(), cands.end(), [](const Candidate& a, const Candidate& b) { return a.count > b.count; });
+    const Candidate* best = nullptr;
+    for (const Candidate& c : cands) {
+        if (!c.code) continue;
+        bool enough = &voters == &script ? c.count * 10 >= voters.size() * 6 && c.count >= 20
+                                         : c.count * 100 >= voters.size() * 15 && c.count >= 50;
+        if (!enough) continue;
+        // Natives must point somewhere else (each at its own thunk).
+        if (!natives.empty()) {
+            size_t own = 0;
+            for (uintptr_t f : natives) {
+                uintptr_t v = 0;
+                if (ReadPtr(f + c.off, v) && v && v != c.value) ++own;
+            }
+            if (own * 2 < natives.size()) continue;
+        }
+        best = &c;
+        break;
+    }
+    if (!best) {
+        Note("UFunction::Func not identified (%zu functions, %zu script / %zu native, flags at 0x%X)", funcs.size(),
+             script.size(), natives.size(), flagsOff);
+        for (size_t i = 0; i < cands.size() && i < 4; ++i)
+            Note("  candidate 0x%X: value %p shared by %zu of %zu (%zu set), %s", cands[i].off,
+                 reinterpret_cast<void*>(cands[i].value), cands[i].count, voters.size(), cands[i].nonNull,
+                 cands[i].code ? "code" : "not code");
+        // Script functions get their code pointer when the class is linked,
+        // which can be after the scan; ask the caller to retry.
+        r_.functionsPending = true;
+        return false;
+    }
+    r_.layout.funcFunc = best->off;
+    r_.processInternal = best->value;
+    Note("UFunction::Func at 0x%X, ProcessInternal=%p (%zu/%zu script functions)", best->off,
+         reinterpret_cast<void*>(best->value), best->count, voters.size());
+    if (r_.layout.funcNative < 0) Note("UFunction::iNative not identified (non-fatal)");
+    if (r_.layout.funcFlags < 0) Note("UFunction::FunctionFlags not identified (non-fatal)");
     Note("UFunction layout: Flags 0x%X, iNative 0x%X, ParmsSize 0x%X, ReturnValueOffset 0x%X", r_.layout.funcFlags,
          r_.layout.funcNative, r_.layout.funcParmsSize, r_.layout.funcRetOffset);
     return true;

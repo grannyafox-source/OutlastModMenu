@@ -141,6 +141,19 @@ bool InitImGuiCommon(HWND hwnd) {
     return true;
 }
 
+// The overlay must attach to the game's own window, not to a launcher,
+// splash screen or another tool's window that happens to present first.
+bool IsGameWindow(HWND hwnd) {
+    if (!hwnd || !IsWindow(hwnd)) return false;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid != GetCurrentProcessId()) return false;
+    if (GetAncestor(hwnd, GA_ROOT) != hwnd) return false;  // child windows (e.g. video panels)
+    RECT rc{};
+    GetClientRect(hwnd, &rc);
+    return rc.right - rc.left >= 320 && rc.bottom - rc.top >= 200;
+}
+
 void TickFps() {
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
@@ -185,7 +198,7 @@ void RenderD3D9(IDirect3DDevice9* dev) {
     if (g_backend == Backend::D3D11) return;
     if (!g_imgui) {
         HWND hwnd = WindowOf(dev);
-        if (!hwnd || !InitImGuiCommon(hwnd)) return;
+        if (!IsGameWindow(hwnd) || !InitImGuiCommon(hwnd)) return;
         if (!ImGui_ImplDX9_Init(dev)) {
             LOGE("ImGui_ImplDX9_Init failed");
             return;
@@ -195,7 +208,19 @@ void RenderD3D9(IDirect3DDevice9* dev) {
         g_imgui = true;
         LOGI("Overlay initialised on Direct3D 9 (window %p)", static_cast<void*>(hwnd));
     } else if (dev != g_dev9) {
-        return;  // some other device (e.g. a tool's) - leave it alone
+        // A different device. If it renders to the game window the game has
+        // re-created its device (e.g. after switching display mode): move the
+        // overlay to it. The old device stays alive until our resources on it
+        // are released, so shutting the backend down here is safe.
+        if (WindowOf(dev) != input::Window()) return;  // some other tool's device
+        ImGui_ImplDX9_Shutdown();
+        if (!ImGui_ImplDX9_Init(dev)) {
+            LOGE("ImGui_ImplDX9_Init failed for the new device");
+            g_dev9 = nullptr;
+            return;
+        }
+        g_dev9 = dev;
+        LOGI("Overlay moved to the game's new Direct3D 9 device");
     }
     if (dev->TestCooperativeLevel() != D3D_OK) return;
     ImGui_ImplDX9_NewFrame();
@@ -285,7 +310,7 @@ void RenderD3D11(IDXGISwapChain* sc) {
         if (FAILED(sc->GetDevice(__uuidof(ID3D11Device), reinterpret_cast<void**>(&dev))) || !dev) return;
         DXGI_SWAP_CHAIN_DESC desc{};
         sc->GetDesc(&desc);
-        if (!desc.OutputWindow || !InitImGuiCommon(desc.OutputWindow)) {
+        if (!IsGameWindow(desc.OutputWindow) || !InitImGuiCommon(desc.OutputWindow)) {
             dev->Release();
             return;
         }

@@ -17,6 +17,9 @@ std::string g_path;
 std::deque<std::string> g_ring;
 Level g_minLevel = Level::Info;
 constexpr size_t kRingSize = 1000;
+// Identical consecutive messages are collapsed into one line plus a count.
+std::string g_lastMessage;
+int g_repeats = 0;
 
 const char* LevelTag(Level l) {
     switch (l) {
@@ -75,16 +78,28 @@ void Write(Level lvl, const char* fmt, ...) {
 
     LockGuard lock(g_mutex);
     if (lvl < g_minLevel) return;
-    g_ring.push_back(line);
-    while (g_ring.size() > kRingSize) g_ring.pop_front();
-    if (g_file) {
-        std::fputs(line.c_str(), g_file);
-        std::fputc('\n', g_file);
-        std::fflush(g_file);
+    if (g_lastMessage == msg) {
+        ++g_repeats;
+        return;
     }
+    std::vector<std::string> out;
+    if (g_repeats) out.push_back(str::Format("[%s][INF] (previous message repeated %d more time%s)", stamp, g_repeats,
+                                             g_repeats == 1 ? "" : "s"));
+    out.push_back(line);
+    g_lastMessage = msg;
+    g_repeats = 0;
+    for (const std::string& l : out) {
+        g_ring.push_back(l);
+        while (g_ring.size() > kRingSize) g_ring.pop_front();
+        if (g_file) {
+            std::fputs(l.c_str(), g_file);
+            std::fputc('\n', g_file);
+        }
 #if OMM_WINDOWS
-    OutputDebugStringA(("[OMM] " + line + "\n").c_str());
+        OutputDebugStringA(("[OMM] " + l + "\n").c_str());
 #endif
+    }
+    if (g_file) std::fflush(g_file);
 }
 
 std::vector<std::string> Recent(size_t maxLines) {

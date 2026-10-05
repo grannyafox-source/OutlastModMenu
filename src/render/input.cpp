@@ -19,7 +19,10 @@ namespace omm::input {
 
 namespace {
 HWND g_hwnd = nullptr;
-WNDPROC g_origProc = nullptr;
+WNDPROC g_origProc = nullptr;  // the procedure we chain to (the game's own)
+bool g_reportedForeign = false;
+volatile LONG g_depth = 0;     // re-entrancy of HookedWndProc (window thread only)
+bool g_reportedLoop = false;
 HotkeyHandler g_hotkeys = nullptr;
 volatile LONG g_menuOpen = 0;
 volatile LONG g_overlayWantsMouse = 0;
@@ -46,7 +49,26 @@ void Queue(HWND h, UINT m, WPARAM wp, LPARAM lp) {
     if (g_queue.size() < 4096) g_queue.push_back({h, m, wp, lp});
 }
 
+LRESULT HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+
 LRESULT CALLBACK HookedWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    // Messages can legitimately nest a few levels (SendMessage from inside a
+    // handler). Very deep nesting means two subclassers keep calling each
+    // other; break the loop by going straight to the game's procedure.
+    if (g_depth > 48) {
+        if (!g_reportedLoop) {
+            g_reportedLoop = true;
+            LOGE("Window procedure loop detected - bypassing the mod's input hook for this message");
+        }
+        return g_origProc ? CallWindowProcW(g_origProc, hwnd, msg, wp, lp) : DefWindowProcW(hwnd, msg, wp, lp);
+    }
+    ++g_depth;
+    LRESULT r = HandleMessage(hwnd, msg, wp, lp);
+    --g_depth;
+    return r;
+}
+
+LRESULT HandleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYUP) {
         bool down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
         bool repeat = down && (lp & (1 << 30));
@@ -162,11 +184,18 @@ bool InstallWndProc(HWND hwnd) {
 void CheckWndProc() {
     if (!g_hwnd || !IsWindow(g_hwnd)) return;
     LONG_PTR cur = GetWindowLongPtrW(g_hwnd, GWLP_WNDPROC);
-    if (cur != reinterpret_cast<LONG_PTR>(&HookedWndProc)) {
-        // Something replaced our procedure; chain to it instead.
-        g_origProc = reinterpret_cast<WNDPROC>(cur);
+    if (cur == reinterpret_cast<LONG_PTR>(&HookedWndProc)) return;
+    // Another component subclassed the window after the mod (the game's
+    // Scaleform IME support, overlays...). It keeps calling our procedure as
+    // its "previous" one, so it must NOT be wrapped again: that would make the
+    // two procedures call each other forever. Only when the game put its own
+    // procedure back (dropping ours) is it safe to install ours again.
+    if (cur == reinterpret_cast<LONG_PTR>(g_origProc)) {
         SetWindowLongPtrW(g_hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&HookedWndProc));
-        LOGW("Window procedure was replaced; re-installed hook");
+        LOGW("The game restored its window procedure - input hook re-installed");
+    } else if (!g_reportedForeign) {
+        g_reportedForeign = true;
+        LOGI("Another component subclassed the game window after the mod; leaving it in place");
     }
 }
 
