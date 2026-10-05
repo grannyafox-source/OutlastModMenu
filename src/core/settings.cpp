@@ -58,10 +58,8 @@ void Settings::SaveIfDirty(uint64_t nowMs, uint64_t minIntervalMs) {
 }
 
 void Settings::Touch(uint64_t nowMs) {
-    if (doc_.Dirty()) {
-        pending_ = true;
-        lastChangeMs_ = nowMs;
-    }
+    pending_ = true;
+    lastChangeMs_ = nowMs;
 }
 
 bool Settings::GetBool(const char* section, const char* key, bool def) {
@@ -105,14 +103,12 @@ void Settings::SetFloat(const char* section, const char* key, float v) { SetStri
 
 void Settings::SetString(const char* section, const char* key, const std::string& v) {
     LockGuard lock(mutex_);
-    doc_.Set(section, key, v);
-    Touch(NowMs());
+    if (doc_.Set(section, key, v)) Touch(NowMs());
 }
 
 void Settings::RemoveKey(const char* section, const char* key) {
     LockGuard lock(mutex_);
-    doc_.Remove(section, key);
-    Touch(NowMs());
+    if (doc_.Remove(section, key) > 0) Touch(NowMs());
 }
 
 }  // namespace omm

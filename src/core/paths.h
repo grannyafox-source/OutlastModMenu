@@ -17,6 +17,9 @@ const std::string& GameRoot();       // install root (contains OLGame\ and Binar
 const std::string& UserConfigDir();  // folder with OLEngine.ini / OLGame.ini / ...
 const std::string& CookedDir();      // <root>\OLGame\CookedPCConsole (or CookedPC)
 
+// Unit tests: point every location at a temporary folder.
+void SetForTests(const std::string& modDir, const std::string& gameRoot, const std::string& configDir);
+
 std::string ModSubdir(const char* name);  // creates it if missing
 std::string ConfigFile(const char* fileName);  // UserConfigDir()\fileName
 

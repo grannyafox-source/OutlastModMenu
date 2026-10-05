@@ -7,32 +7,16 @@
 #include "../src/ue3/engine.h"
 #include "../src/ue3/scanner.h"
 #include "fake_ue3.h"
+#include "test_util.h"
 
 #include <cstdio>
 #include <string>
 
-static int g_failures = 0;
-static int g_checks = 0;
+int g_failures = 0;
+int g_checks = 0;
 
-#define CHECK(cond)                                                             \
-    do {                                                                        \
-        ++g_checks;                                                             \
-        if (!(cond)) {                                                          \
-            std::printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);       \
-            ++g_failures;                                                       \
-        }                                                                       \
-    } while (0)
-
-#define CHECK_EQ(a, b)                                                                                  \
-    do {                                                                                                \
-        ++g_checks;                                                                                     \
-        long long va_ = static_cast<long long>(a), vb_ = static_cast<long long>(b);                     \
-        if (va_ != vb_) {                                                                               \
-            std::printf("  FAIL %s:%d: %s == %s (0x%llX vs 0x%llX)\n", __FILE__, __LINE__, #a, #b,      \
-                        static_cast<unsigned long long>(va_), static_cast<unsigned long long>(vb_));    \
-            ++g_failures;                                                                               \
-        }                                                                                               \
-    } while (0)
+void TestIniTweaks();
+void TestModInstaller();
 
 using omm::ue3::Scanner;
 
@@ -242,6 +226,9 @@ int main() {
     moved.objIndex = sizeof(void*) == 8 ? 0x34 : 0x1C;
     moved.objSize = sizeof(void*) == 8 ? 0x68 : 0x40;
     TestScanner(moved, "perturbed layout");
+
+    TestIniTweaks();
+    TestModInstaller();
 
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

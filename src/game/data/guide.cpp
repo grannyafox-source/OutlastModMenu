@@ -8,7 +8,7 @@ const std::vector<GuideSection>& Guide() {
     static const std::vector<GuideSection> guide = {
         {"Start here",
          {{"Opening the menu",
-           "- Press INSERT or F1 at any time (both can be changed in Settings).\n"
+           "- Press INSERT or F1 at any time (INSERT can be changed in Settings).\n"
            "- Or open the game's own Options / pause screen: a MOD MENU button appears there.\n"
            "- Mouse works, and so does the keyboard: arrow keys move, Space/Enter activate, Esc goes back.\n"
            "- While the menu is open the game does not receive your mouse and keyboard."},
@@ -181,7 +181,8 @@ const std::vector<GuideSection>& Guide() {
           {"Collectible hunting",
            "- Turn on ESP for Documents and Recording spots: documents show until picked up, recording spots show "
            "whether they are recorded.\n"
-           "- The Teleport tab lists every document and recording spot in the loaded area.\n"
+           "- The Teleport tab lists the documents, recording spots and batteries around you, with a button to "
+           "teleport to each.\n"
            "- Notes need the camcorder raised near the event for long enough - stand still and keep recording."}}},
 
         {"Insane mode",

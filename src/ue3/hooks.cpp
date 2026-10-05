@@ -134,11 +134,14 @@ bool HookFunction(UFunction* fn, HookCallback after) {
     for (int i = 0; i < kSlots; ++i) {
         if (g_slots[i].fn) continue;
         void** slot = FuncSlot(fn);
+        // Name lookups use caches owned by the game thread once the hook is
+        // live, so resolve the name before swapping the pointer.
+        std::string name = FullName(fn);
         g_slots[i].original = *slot;
         g_slots[i].after = after;
         g_slots[i].fn = fn;
         InterlockedExchangePointer(slot, ThunkFor(i));
-        LOGI("Hooked %s (Func %p -> slot %d)", FullName(fn).c_str(), g_slots[i].original, i);
+        LOGI("Hooked %s (Func %p -> slot %d)", name.c_str(), g_slots[i].original, i);
         return true;
     }
     LOGE("No free hook slot for %s", FullName(fn).c_str());
@@ -171,9 +174,10 @@ bool InstallProcessInternalHook(UFunction* target, HookCallback after) {
     MH_STATUS st = MH_Initialize();
     if (st != MH_OK && st != MH_ERROR_ALREADY_INITIALIZED) return false;
     if (MH_CreateHook(reinterpret_cast<void*>(pi), reinterpret_cast<void*>(&PIDetour), &g_piOriginal) != MH_OK) return false;
+    std::string name = FullName(target);
     if (MH_EnableHook(reinterpret_cast<void*>(pi)) != MH_OK) return false;
     g_piActive = true;
-    LOGW("Using ProcessInternal fallback hook for %s", FullName(target).c_str());
+    LOGW("Using ProcessInternal fallback hook for %s", name.c_str());
     return true;
 }
 

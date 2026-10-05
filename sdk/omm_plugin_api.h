@@ -55,6 +55,9 @@ typedef struct OMM_Api {
     void (*RegisterMenuSection)(const char* title, OMM_Callback draw, void* user);
     void* (*GetImGuiContext)(void);
     const char* (*ImGuiVersion)(void);
+    /* The host's ImGui allocator: pass to ImGui::SetAllocatorFunctions so
+       both sides use the same heap. */
+    void (*GetImGuiAllocatorFunctions)(void** allocFunc, void** freeFunc, void** userData);
     /* Runs fn once on the game thread at the start of the next frame. */
     void (*QueueOnGameThread)(OMM_Callback fn, void* user);
 

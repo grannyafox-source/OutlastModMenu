@@ -1,0 +1,32 @@
+; Example model pack for Outlast Mod Menu.
+;
+; To use: copy this file, rename it to something.ini (without .txt) and edit
+; it. The menu lists every .ini in this folder under Character > Model packs.
+;
+; A model pack only says WHICH model replaces WHICH character. The models
+; themselves must be skeletal meshes cooked for Outlast's Unreal Engine 3
+; build (a .upk package). Install the package with the Mod Loader
+; (OutlastModMenu\mods\<YourPack>\CookedPCConsole\YourPack.upk) so the game
+; can load it.
+;
+; Models that are rigged to Outlast's character skeleton animate properly.
+; Anything else (a train, a cartoon character with its own skeleton) still
+; shows up but will not animate correctly - which is usually the funny part.
+
+[Pack]
+Name=Example: goofy swaps
+Author=You
+Description=Chris Walker becomes a train and Eddie Gluskin becomes a cartoon dad.
+
+; Target: AllEnemies, Hero, or an enemy class:
+;   OLEnemySoldier (Chris Walker), OLEnemyGroom (Eddie Gluskin),
+;   OLEnemySurgeon (Dr. Trager), OLEnemyCannibal (Frank Manera),
+;   OLEnemyGenericPatient (patients), OLEnemyNanoCloud (the Walrider)
+; Mesh: Package.Group.MeshName as stored in your .upk
+[Swap1]
+Target=OLEnemySoldier
+Mesh=GoofyPack.Trains.TankEngine_Mesh
+
+[Swap2]
+Target=OLEnemyGroom
+Mesh=GoofyPack.Cartoon.CartoonDad_Mesh

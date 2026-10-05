@@ -1,0 +1,9 @@
+# Build output
+/build/
+/dist/
+*.o
+*.obj
+*.exe
+*.dll
+*.asi
+!/release/**

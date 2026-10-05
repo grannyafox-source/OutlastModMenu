@@ -63,6 +63,15 @@ void ApiRegisterSection(const char* title, OMM_Callback draw, void* user) {
     g_sections.push_back({title ? title : "Plugin", draw, user});
 }
 void* ApiImGuiContext() { return ImGui::GetCurrentContext(); }
+void ApiImGuiAllocators(void** allocFunc, void** freeFunc, void** userData) {
+    ImGuiMemAllocFunc a = nullptr;
+    ImGuiMemFreeFunc f = nullptr;
+    void* u = nullptr;
+    ImGui::GetAllocatorFunctions(&a, &f, &u);
+    if (allocFunc) *allocFunc = reinterpret_cast<void*>(a);
+    if (freeFunc) *freeFunc = reinterpret_cast<void*>(f);
+    if (userData) *userData = u;
+}
 const char* ApiImGuiVersion() { return IMGUI_VERSION; }
 void ApiQueue(OMM_Callback fn, void* user) {
     if (fn) game::Enqueue([fn, user] { fn(user); });
@@ -127,6 +136,7 @@ OMM_Api MakeApi() {
     a.RegisterMenuSection = ApiRegisterSection;
     a.GetImGuiContext = ApiImGuiContext;
     a.ImGuiVersion = ApiImGuiVersion;
+    a.GetImGuiAllocatorFunctions = ApiImGuiAllocators;
     a.QueueOnGameThread = ApiQueue;
     a.PlayerController = ApiPC;
     a.Hero = ApiHero;

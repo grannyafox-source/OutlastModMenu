@@ -63,16 +63,16 @@ bool ProcessEventReady() { return g_peIndex >= 0; }
 int ProcessEventIndex() { return g_peIndex; }
 uintptr_t ProcessEventAddress() { return g_peAddr; }
 
-void DiscoverProcessEvent(UObject* self, uintptr_t returnAddress) {
-    if (g_peIndex >= 0 || !self) return;
-    const mem::ModuleInfo& mod = MainModule();
-    void** vtbl = *reinterpret_cast<void***>(self);
-    uintptr_t exact = 0;
-#if OMM_X64
-    exact = FunctionStartX64(returnAddress);
-#endif
-    int bestIdx = -1, exactIdx = -1;
+namespace {
+struct VtableMatch {
+    int exactIdx = -1;
+    int bestIdx = -1;
     uintptr_t best = 0;
+};
+
+VtableMatch SearchVtable(void** vtbl, uintptr_t returnAddress, uintptr_t exact) {
+    const mem::ModuleInfo& mod = MainModule();
+    VtableMatch m;
     for (int i = 0; i < 400; ++i) {
         if (!mem::IsReadable(&vtbl[i], sizeof(void*))) break;
         uintptr_t e = reinterpret_cast<uintptr_t>(vtbl[i]);
@@ -80,21 +80,43 @@ void DiscoverProcessEvent(UObject* self, uintptr_t returnAddress) {
             if (i > 16) break;  // left the vtable
             continue;
         }
-        if (exact && e == exact) exactIdx = i;
-        if (e <= returnAddress && returnAddress - e < 0x4000 && e > best) {
-            best = e;
-            bestIdx = i;
+        if (exact && e == exact && m.exactIdx < 0) m.exactIdx = i;
+        if (e <= returnAddress && returnAddress - e < 0x4000 && e > m.best) {
+            m.best = e;
+            m.bestIdx = i;
         }
     }
-    int idx = exactIdx >= 0 ? exactIdx : bestIdx;
-    if (idx < 0) {
-        LOGE("ProcessEvent discovery failed (return address %p)", reinterpret_cast<void*>(returnAddress));
+    return m;
+}
+}  // namespace
+
+void DiscoverProcessEvent(UObject* self, uintptr_t returnAddress) {
+    if (g_peIndex >= 0 || !self) return;
+    uintptr_t exact = 0;
+#if OMM_X64
+    exact = FunctionStartX64(returnAddress);
+#endif
+    // The hooked function was called from UObject::ProcessEvent. Actors
+    // override ProcessEvent (AActor::ProcessEvent forwards to the UObject
+    // version), so search the vtable of the object's class first: UClass
+    // does not override it, so its slot holds UObject::ProcessEvent itself.
+    // The slot index is the same for every object.
+    UObject* candidates[2] = {ClassOf(self), self};
+    for (UObject* obj : candidates) {
+        if (!obj || !mem::IsReadable(obj, sizeof(void*))) continue;
+        void** vtbl = *reinterpret_cast<void***>(obj);
+        if (!mem::IsReadable(vtbl, sizeof(void*))) continue;
+        VtableMatch m = SearchVtable(vtbl, returnAddress, exact);
+        int idx = m.exactIdx >= 0 ? m.exactIdx : m.bestIdx;
+        if (idx < 0) continue;
+        g_peAddr = reinterpret_cast<uintptr_t>(vtbl[idx]);
+        g_peIndex = idx;
+        LOGI("ProcessEvent: vtable index %d at %p (return address %p, %s, %s vtable)", idx,
+             reinterpret_cast<void*>(g_peAddr), reinterpret_cast<void*>(returnAddress),
+             m.exactIdx >= 0 ? "unwind-table match" : "nearest vtable entry", obj == self ? "object" : "class");
         return;
     }
-    g_peAddr = reinterpret_cast<uintptr_t>(vtbl[idx]);
-    g_peIndex = idx;
-    LOGI("ProcessEvent: vtable index %d at %p (return address %p, %s)", idx, reinterpret_cast<void*>(g_peAddr),
-         reinterpret_cast<void*>(returnAddress), exactIdx >= 0 ? "unwind-table match" : "nearest vtable entry");
+    LOGE("ProcessEvent discovery failed (return address %p)", reinterpret_cast<void*>(returnAddress));
 }
 
 bool ProcessEvent(UObject* obj, UFunction* fn, void* params) {

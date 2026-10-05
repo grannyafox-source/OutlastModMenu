@@ -77,6 +77,16 @@ void Init(void* modDllModule) {
         g_cfg = !homeCfg.empty() ? homeCfg : rootCfg;
 }
 
+void SetForTests(const std::string& modDir, const std::string& gameRoot, const std::string& configDir) {
+    g_modDir = modDir;
+    g_root = gameRoot;
+    g_cfg = configDir;
+    g_bin = fs::Join(fs::Join(gameRoot, "Binaries"), "Win64");
+    g_exe = fs::Join(g_bin, "OLGame.exe");
+    g_cooked = fs::Join(fs::Join(gameRoot, "OLGame"), "CookedPCConsole");
+    fs::CreateDirectories(g_modDir);
+}
+
 const std::string& ModDllPath() { return g_dll; }
 const std::string& ModDir() { return g_modDir; }
 const std::string& GameExePath() { return g_exe; }

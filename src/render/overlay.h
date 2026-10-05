@@ -1,5 +1,7 @@
-// ImGui overlay drawn on top of the game (D3D9, or D3D11 when the game is
-// started with -dx11). Everything here runs on the game's render thread.
+// ImGui overlay drawn on top of the game. Outlast renders with Direct3D 9;
+// Direct3D 11 is hooked as well for wrappers that translate Direct3D 9 to 11
+// (dgVoodoo and similar) and present through DXGI. Runs on the game's render
+// thread.
 #pragma once
 
 namespace omm::render {

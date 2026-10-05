@@ -282,6 +282,8 @@ const char* StateName(int s) {
 
 std::string DisplayName(void* p) {
     auto* pawn = static_cast<UObject*>(p);
+    if (UObject* mesh = Obj(Obj(pawn, "Mesh"), "SkeletalMesh"))
+        if (str::IContains(Name(mesh), "Priest")) return "Father Martin";
     if (IsA(pawn, "OLEnemySoldier") && !IsA(pawn, "OLEnemyGroom")) return "Chris Walker";
     if (IsA(pawn, "OLEnemyGroom")) return "Eddie Gluskin";
     if (IsA(pawn, "OLEnemySurgeon")) return "Dr. Trager";
@@ -549,7 +551,8 @@ void SetIgnorePlayer(int32_t index, bool ignore) {
     UObject* bot = Obj(t->pawn, "Controller");
     Call c(bot, "ToggleAIIgnorePlayer");
     if (c.Ok()) c.Bool("bEnable", ignore).Invoke();
-    else SetBool(t->pawn, "Modifiers.bShouldAttack", !ignore);
+    SetBool(t->pawn, "Modifiers.bShouldAttack", !ignore);
+    ApplyModifiersStruct(t->pawn);
 }
 
 void SetWeapon(int32_t index, int weapon) {

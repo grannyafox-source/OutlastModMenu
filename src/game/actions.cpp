@@ -200,12 +200,26 @@ const char* OutfitName(Outfit o) {
 bool SetOutfit(Outfit o) {
     if (!NeedHero()) return false;
     UObject* hero = W().hero;
+    // Remember the model the game gave the hero, so "Original" can go back to
+    // it. If the game itself changed the model since our last swap (e.g. the
+    // story's fingerless hands), that becomes the original.
+    static UObject* s_hero = nullptr;
+    static UObject* s_original = nullptr;
+    static UObject* s_applied = nullptr;
+    UObject* current = Obj(Obj(hero, "Mesh"), "SkeletalMesh");
+    if (s_hero != hero || current != s_applied) {
+        s_hero = hero;
+        s_original = current;
+    }
     UObject* mesh = nullptr;
     switch (o) {
         case Outfit::Original: {
-            // The class default holds the mesh the hero spawns with.
-            UObject* def = FindObject(("Default__" + Name(ClassOf(hero))).c_str());
-            mesh = Obj(Obj(def, "Mesh"), "SkeletalMesh");
+            mesh = s_original && IsValid(s_original) ? s_original : nullptr;
+            if (!mesh) {
+                // The class default holds the mesh the hero spawns with.
+                UObject* def = FindObject(("Default__" + Name(ClassOf(hero))).c_str());
+                mesh = Obj(Obj(def, "Mesh"), "SkeletalMesh");
+            }
             break;
         }
         case Outfit::Fingerless: mesh = Obj(hero, "FingerlessMesh"); break;
@@ -218,7 +232,10 @@ bool SetOutfit(Outfit o) {
     }
     bool ok = SetSkeletalMesh(Obj(hero, "Mesh"), mesh);
     if (UObject* shadow = Obj(hero, "ShadowProxy")) SetSkeletalMesh(shadow, mesh);
-    if (ok) Notify(std::string("Outfit: ") + OutfitName(o));
+    if (ok) {
+        s_applied = mesh;
+        Notify(std::string("Outfit: ") + OutfitName(o));
+    }
     return ok;
 }
 
