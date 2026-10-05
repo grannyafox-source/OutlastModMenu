@@ -104,7 +104,8 @@ read from OLInput.ini.
 ## INI Tweaks *(restart)*
 Grouped one-click edits with an on/off state, presets and backups: cheaper or no shadows, no
 post-processing, render scale 75% / 60%, no FXAA, VSync off, 16x anisotropic filtering, high-res shadows,
-bigger texture pool, no motion blur / depth of field, FPS cap 144 or unlimited, skip intro movie, raw mouse,
+bigger texture pool, no motion blur / depth of field, FPS cap 144 or unlimited, skip intro movie, brighter
+default gamma, wider field of view, raw mouse,
 the game's cheat manager and unlimited-battery switches, carry more batteries, longer batteries, struggles
 can't fail, no tutorials, **missing fingers from the start**, cracked lens from the start, Whistleblower
 patient clothes from the start, enemies never search hiding spots, hard-of-hearing or sharp-eared enemies.

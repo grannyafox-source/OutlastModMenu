@@ -84,6 +84,11 @@ const std::vector<Tweak> kTweaks = {
      {{F::Engine, "Engine.Engine", "bSmoothFrameRate", "FALSE"}}},
     {"vis_skip_intro", "Visuals", "Skip intro logo movie", "Starts straight at the main menu.",
      {{F::Engine, "FullScreenMovie", "StartupMovies", nullptr}}},
+    {"vis_gamma", "Visuals", "Brighter picture (gamma 2.6)",
+     "Raises the default brightness (the in-game brightness slider changes the same value).",
+     {{F::Engine, "Engine.Client", "DisplayGamma", "2.6"}}},
+    {"vis_fov", "Visuals", "Wider field of view", "100 degrees walking and 110 running instead of 90 / 100.",
+     {{F::Game, "OLGame.OLHero", "DefaultFOV", "100.0"}, {F::Game, "OLGame.OLHero", "RunningFOV", "110.0"}}},
 
     // --- Controls ---------------------------------------------------------------------
     {"ctl_raw_mouse", "Controls", "Raw mouse (no smoothing)", "Removes the floaty mouse smoothing.",
