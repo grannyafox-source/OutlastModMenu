@@ -44,7 +44,9 @@ void PagePlayer(Ctx& c) {
     Heading("Survival");
     Toggle("God mode", &s.godMode, "Enemies, falls and hazards can't kill you.");
     Toggle("Infinite health", &s.infiniteHealth, "Health is refilled every frame (works even where god mode is ignored).");
-    Toggle("Invisible to enemies", &s.invisible, "Enemies don't see or chase you (the game's own 'ghost' flag on the player).");
+    Toggle("Invisible to enemies", &s.invisible,
+           "Enemies don't see, hear or chase you (the game's own 'ghost' flag on the player, plus blind and deaf "
+           "enemies).");
     Toggle("Silent footsteps", &s.silentFootsteps, "Running, landing, doors and lockers make no noise enemies can hear.");
     Toggle("No fall damage", &s.noFallDamage);
     Toggle("Fast health regeneration", &s.fastHealthRegen);

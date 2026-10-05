@@ -23,6 +23,7 @@ std::atomic<bool> g_open{false};
 std::atomic<bool> g_wantText{false};
 std::atomic<int> g_captureSlot{-1};  // hotkey being rebound (Settings page)
 std::atomic<int> g_capturedVk{0};
+std::atomic<uint64_t> g_captureEndedMs{0};
 
 Mutex g_hotkeyLock;
 std::vector<int> g_pendingHotkeys;
@@ -241,7 +242,16 @@ void Frame() {
     game::Snapshot snap = game::state::GetSnapshot();
     Ctx c{snap, s};
 
-    if (s.espEnabled && snap.inGame) DrawEsp(snap, s);
+    if (s.espEnabled && snap.inGame && snap.menu == game::GameMenu::None) DrawEsp(snap, s);
+    if (g_open) {
+        // Esc closes the menu unless it is needed by a text box or popup.
+        ImGuiIO& io = ImGui::GetIO();
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !io.WantTextInput &&
+            !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId) && CaptureSlot() < 0 &&
+            NowMs() - g_captureEndedMs > 500) {
+            SetOpen(false);
+        }
+    }
     if (g_open) DrawMainWindow(c);
     DrawGameMenuButton(snap, s);
     DrawToasts();
@@ -258,6 +268,7 @@ bool OnHotkey(int vk, bool down, bool repeat) {
         if (down && !repeat) {
             g_capturedVk = vk == 0x1B ? 0 : vk;  // Esc clears the binding
             g_captureSlot = -1;
+            g_captureEndedMs = NowMs();
         }
         return true;
     }

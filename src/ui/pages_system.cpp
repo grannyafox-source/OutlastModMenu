@@ -135,6 +135,11 @@ void PageDiagnostics(Ctx& c) {
         if (ImGui::BeginTabItem("Console")) {
             Hint("Runs Unreal Engine console commands, e.g. 'slomo 0.5', 'ghost', 'walk', 'open <map>'. "
                  "Output appears below.");
+            static bool refocus = false;
+            if (refocus) {
+                ImGui::SetKeyboardFocusHere();
+                refocus = false;
+            }
             ImGui::SetNextItemWidth(-Em(5));
             bool run = ImGui::InputText("##cmd", g_console, sizeof(g_console), ImGuiInputTextFlags_EnterReturnsTrue);
             ImGui::SameLine();
@@ -143,7 +148,7 @@ void PageDiagnostics(Ctx& c) {
                 std::string cmd = g_console;
                 Enqueue([cmd] { actions::RunConsoleCommand(cmd); });
                 g_console[0] = 0;
-                ImGui::SetKeyboardFocusHere(-1);
+                refocus = true;
             }
             ImGui::BeginChild("##out", ImVec2(0, 0), ImGuiChildFlags_Borders);
             for (const std::string& l : actions::ConsoleLog()) ImGui::TextUnformatted(l.c_str());

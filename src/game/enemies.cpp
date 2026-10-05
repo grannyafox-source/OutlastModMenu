@@ -30,7 +30,8 @@ std::vector<Tracked> g_list;
 uint64_t g_lastRefresh = 0;
 std::map<int32_t, UObject*> g_spawned;       // index -> pawn spawned by the mod
 std::map<int32_t, bool> g_manualFrozen;
-std::map<int32_t, bool> g_hiddenApplied;
+std::set<int32_t> g_removed;  // enemies that could not be destroyed: kept hidden and frozen
+std::map<int32_t, bool> g_hiddenApplied;  // index -> was it hidden before the mod hid it
 std::map<int32_t, FVector> g_scaleOriginal;
 std::map<int32_t, UObject*> g_originalMesh;  // first mesh seen before a swap
 UObject* g_heroOriginalMesh = nullptr;
@@ -157,17 +158,31 @@ void ApplyHeroRule() {
     if (shadow) SetSkeletalMesh(shadow, mesh);
 }
 
-void SetHiddenIfNeeded(const Tracked& t, bool hidden) {
-    bool applied = g_hiddenApplied.count(t.index) ? g_hiddenApplied[t.index] : false;
-    if (applied == hidden) return;
-    Call c(t.pawn, "SetHidden");
+void SetHidden(UObject* pawn, bool hidden) {
+    Call c(pawn, "SetHidden");
     if (c.Ok()) {
         c.Bool("bNewHidden", hidden);
         c.Invoke();
     } else {
-        SetBool(t.pawn, "bHidden", hidden);
+        SetBool(pawn, "bHidden", hidden);
     }
-    g_hiddenApplied[t.index] = hidden;
+}
+
+// Hides an enemy, remembering whether the game had it hidden already (some
+// enemies wait hidden for a scripted entrance) so that showing it again only
+// undoes what the mod did.
+void SetHiddenIfNeeded(const Tracked& t, bool hidden) {
+    auto it = g_hiddenApplied.find(t.index);
+    if (hidden) {
+        if (it != g_hiddenApplied.end()) return;
+        bool wasHidden = Bool(t.pawn, "bHidden");
+        g_hiddenApplied[t.index] = wasHidden;
+        if (!wasHidden) SetHidden(t.pawn, true);
+    } else if (it != g_hiddenApplied.end()) {
+        bool wasHidden = it->second;
+        g_hiddenApplied.erase(it);
+        if (!wasHidden) SetHidden(t.pawn, false);
+    }
 }
 
 void SetScaleIfNeeded(const Tracked& t, bool enable, const FVector& scale) {
@@ -300,7 +315,9 @@ void Refresh(bool force) {
     std::vector<Tracked> list;
     if (UClass* base = FindClass("OLEnemyPawn")) {
         for (UObject* o : FindInstances(base, 512)) {
-            if (Bool(o, "bDeleteMe")) continue;
+            // Archetypes (templates stored in packages) are not in the world:
+            // they have no WorldInfo and must never be modified or destroyed.
+            if (Bool(o, "bDeleteMe") || !Obj(o, "WorldInfo")) continue;
             Tracked t;
             t.pawn = o;
             t.index = IndexOf(o);
@@ -312,6 +329,17 @@ void Refresh(bool force) {
     g_list.swap(list);
     for (auto it = g_spawned.begin(); it != g_spawned.end();)
         it = (!IsValid(it->second) || IndexOf(it->second) != it->first) ? g_spawned.erase(it) : std::next(it);
+    // Forget per-enemy state of enemies that no longer exist (indices get reused).
+    std::set<int32_t> alive;
+    for (const Tracked& t : g_list) alive.insert(t.index);
+    auto prune = [&](auto& m) {
+        for (auto it = m.begin(); it != m.end();) it = alive.count(it->first) ? std::next(it) : m.erase(it);
+    };
+    prune(g_manualFrozen);
+    prune(g_hiddenApplied);
+    prune(g_scaleOriginal);
+    prune(g_originalMesh);
+    for (auto it = g_removed.begin(); it != g_removed.end();) it = alive.count(*it) ? std::next(it) : g_removed.erase(it);
 }
 
 void Apply(const ModState& s, float dt) {
@@ -337,17 +365,20 @@ void Apply(const ModState& s, float dt) {
         UObject* e = t.pawn;
         UObject* bot = Obj(e, "Controller");
         const std::string k = "e" + std::to_string(t.index) + ":";
-        bool frozen = s.freezeEnemies || (g_manualFrozen.count(t.index) && g_manualFrozen[t.index]);
+        const bool removed = g_removed.count(t.index) != 0;
+        bool frozen = removed || s.freezeEnemies || (g_manualFrozen.count(t.index) && g_manualFrozen[t.index]);
         bool dilate = frozen || s.enemyTimeScaleOverride;
         float td = frozen ? 0.0001f : s.enemyTimeScale;
         o.Float(k + "td", e, "CustomTimeDilation", dilate, td);
         o.Float(k + "tdBot", bot, "CustomTimeDilation", dilate, td);
         o.Bool(k + "attack", e, "Modifiers.bShouldAttack", s.passiveEnemies, false);
-        o.Bool(k + "blind", Obj(bot, "SightComponent"), "bIgnoreTarget", s.blindEnemies, true);
-        o.Float(k + "deaf", e, "HearingThreshold", s.deafEnemies, 0.f);
+        // "Invisible to enemies" also blinds and deafens them, in case the
+        // player's own ghost flag is not enough in some situation.
+        o.Bool(k + "blind", Obj(bot, "SightComponent"), "bIgnoreTarget", s.blindEnemies || s.invisible, true);
+        o.Float(k + "deaf", e, "HearingThreshold", s.deafEnemies || s.invisible, 0.f);
         for (const char* p : kSpeedPaths) o.Scale(k + p, e, p, s.enemySpeedOverride, s.enemySpeedMultiplier);
         for (const char* p : kDamagePaths) o.ScaleNumber(k + p, e, p, s.enemyDamageOverride, s.enemyDamageMultiplier);
-        SetHiddenIfNeeded(t, s.invisibleEnemies);
+        SetHiddenIfNeeded(t, s.invisibleEnemies || removed);
         SetScaleIfNeeded(t, s.enemyScaleOverride, scale);
         if (s.autoApplyModelSwaps) ApplyMeshRule(t);
     }
@@ -375,7 +406,7 @@ void Apply(const ModState& s, float dt) {
 void FillSnapshot(Snapshot& snap) {
     FVector heroLoc = snap.location;
     for (const Tracked& t : g_list) {
-        if (!Alive(t)) continue;
+        if (!Alive(t) || g_removed.count(t.index)) continue;
         EnemyInfo info;
         info.index = t.index;
         info.className = Name(ClassOf(t.pawn));
@@ -526,10 +557,10 @@ void Kill(int32_t index) {
     bool ok = DestroyActor(t->pawn);
     if (bot) DestroyActor(bot);
     if (!ok) {
-        // Destroy unavailable: make it harmless and invisible instead.
+        // Destroy unavailable: make it harmless, frozen and invisible instead.
+        g_removed.insert(index);
         SetHiddenIfNeeded(*t, true);
         SetBool(t->pawn, "Modifiers.bShouldAttack", false);
-        g_manualFrozen[index] = true;
     }
     g_spawned.erase(index);
     Refresh(true);
