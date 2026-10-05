@@ -10,11 +10,16 @@
 
 namespace omm::game::enemies {
 
+// Asset paths are the ones the game's own levels use (they are only in
+// memory while a level that contains them is loaded). When no enemy of the
+// same class exists to copy from, the spawner falls back to these.
 struct SpawnType {
     const char* label;
     const char* className;
-    const char* behaviorTree;  // name of an OLBTBehaviorTree used when no template exists
-    const char* meshHint;      // substring of the character's SkeletalMesh name
+    const char* behaviorTree;  // OLBTBehaviorTree path
+    const char* voAsset;       // OLAIContextualVOAsset path (nullptr = none)
+    const char* mesh;          // SkeletalMesh path (nullptr = class default)
+    const char* meshHint;      // substring of the SkeletalMesh name, last resort
 };
 const std::vector<SpawnType>& SpawnTypes();
 

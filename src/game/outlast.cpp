@@ -13,6 +13,8 @@ using namespace ue3;
 namespace {
 World g_world;
 UObject* g_engine = nullptr;
+std::string g_mapName;  // cached: GetMapName returns an engine-allocated string
+bool g_mapNameValid = false;
 
 UObject* ValidOrNull(UObject* o) { return IsValid(o) ? o : nullptr; }
 }  // namespace
@@ -52,6 +54,7 @@ void RefreshWorld(UObject* viewportClient) {
         w.fx = ValidOrNull(Obj(w.pc, "FXManager"));
     }
     if (w.worldInfo) w.game = ValidOrNull(Obj(w.worldInfo, "Game"));
+    if (w.worldInfo != g_world.worldInfo || w.pc != g_world.pc) g_mapNameValid = false;
     g_world = w;
 }
 
@@ -199,10 +202,14 @@ bool SetSkeletalMesh(UObject* comp, UObject* mesh) {
 
 std::string MapName() {
     if (!g_world.worldInfo) return std::string();
+    if (g_mapNameValid) return g_mapName;
     Call c(g_world.worldInfo, "GetMapName");
     if (!c.Ok()) return std::string();
     if (c.HasParam("bIncludePrefix")) c.Bool("bIncludePrefix", false);
-    return c.Invoke() ? c.RetStr() : std::string();
+    if (!c.Invoke()) return std::string();
+    g_mapName = c.RetStr();
+    g_mapNameValid = true;
+    return g_mapName;
 }
 
 bool PlayingDLC() { return g_world.game && Bool(g_world.game, "bIsPlayingDLC"); }

@@ -147,6 +147,15 @@ struct ModState {
     bool enemyScaleOverride = false;
     float enemyScale[3] = {1, 1, 1};
 
+    // --- Performance ----------------------------------------------------------------
+    int perfLevel = 0;               // perf::Level: 0 off, 1 balanced, 2 potato
+
+    // --- Teleport roulette -------------------------------------------------------
+    int rouletteMode = 0;            // 0 off, 1 random location, 2 random checkpoint, 3 random scene
+    float rouletteInterval = 120.f;  // seconds between jumps
+    bool rouletteIncludeMain = true;
+    bool rouletteIncludeDlc = false;
+
     // --- Menu ----------------------------------------------------------------
     bool pauseWhileMenuOpen = false;
     bool showModMenuButton = true;   // button drawn on the game's own menus
@@ -160,7 +169,7 @@ void InitEspDefaults(ModState& s);
 struct EspItem {
     EspCategory category = EspCategory::Enemy;
     ue3::FVector location;
-    float height = 0.f;              // for boxes (0 = point marker)
+    float height = 0.f;              // half height of a box around location (0 = point marker)
     float distance = 0.f;
     std::string label;
     std::string detail;

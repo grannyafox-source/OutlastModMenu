@@ -66,6 +66,13 @@ Tracked* FindTracked(int32_t index) {
     return nullptr;
 }
 
+// "02_AI_Behaviors.Soldier_BT" -> "Soldier_BT"
+std::string ShortName(const char* path) {
+    std::string p = path ? path : "";
+    size_t dot = p.rfind('.');
+    return dot == std::string::npos ? p : p.substr(dot + 1);
+}
+
 float Frand() { return static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX); }
 
 int32_t YawTowards(const FVector& from, const FVector& to) {
@@ -241,12 +248,19 @@ bool DestroyActor(UObject* a) {
 
 const std::vector<SpawnType>& SpawnTypes() {
     static const std::vector<SpawnType> types = {
-        {"Chris Walker", "OLEnemySoldier", "Soldier_BT", "Soldier"},
-        {"Patient", "OLEnemyGenericPatient", "Generic_FullLoop_BT", nullptr},
-        {"Dr. Richard Trager", "OLEnemySurgeon", "Surgeon_FullLoop_BT", "Surgeon"},
-        {"The Walrider", "OLEnemyNanoCloud", "NanoCloud_BT", "Nano_Swarm"},
-        {"Eddie Gluskin (the Groom)", "OLEnemyGroom", "Generic_FullLoop_BT", "Groom"},
-        {"Frank Manera (the Cannibal)", "OLEnemyCannibal", "Surgeon_FullLoop_BT", "Cannibal"},
+        {"Chris Walker", "OLEnemySoldier", "02_AI_Behaviors.Soldier_BT", "02_AI_Behaviors.Soldier", nullptr,
+         "Soldier"},
+        {"Patient (variant)", "OLEnemyGenericPatient", "02_AI_Behaviors.Generic_FullLoop_BT", nullptr, nullptr,
+         nullptr},
+        {"Dr. Richard Trager", "OLEnemySurgeon", "02_AI_Behaviors.Surgeon_FullLoop_BT", "02_AI_Behaviors.Surgeon",
+         "02_Surgeon.Mesh.Surgeon", "Surgeon"},
+        {"The Walrider", "OLEnemyNanoCloud", "02_AI_Behaviors.NanoCloud_BT", nullptr, nullptr, "Nano"},
+        {"Eddie Gluskin (the Groom)", "OLEnemyGroom", "02_AI_Behaviors.Generic_FullLoop_BT",
+         "02_AI_Behaviors.Groom_soft", "02_Groom.Groom_Shirt", "Groom"},
+        {"Frank Manera (the Cannibal)", "OLEnemyCannibal", "02_AI_Behaviors.Surgeon_FullLoop_BT",
+         "02_AI_Behaviors.Cannibal", nullptr, "Cannibal"},
+        {"Father Martin (as an enemy)", "OLEnemyGenericPatient", "02_AI_Behaviors.Generic_FullLoop_BT", nullptr,
+         "02_Priest.Pawn.Priest-01", "Priest"},
     };
     return types;
 }
@@ -462,15 +476,31 @@ bool Spawn(const SpawnRequest& r) {
             if (UObject* vo = Obj(tmpl, "VOAsset")) SetObj(pawn, "VOAsset", vo);
             UObject* tmplMesh = Obj(Obj(tmpl, "Mesh"), "SkeletalMesh");
             UObject* comp = Obj(pawn, "Mesh");
-            if (tmplMesh && comp && Obj(comp, "SkeletalMesh") != tmplMesh) SetSkeletalMesh(comp, tmplMesh);
+            if (!type.mesh && tmplMesh && comp && Obj(comp, "SkeletalMesh") != tmplMesh) SetSkeletalMesh(comp, tmplMesh);
         } else if (!tmpl) {
             if (!Obj(pawn, "BehaviorTree")) {
-                if (UObject* bt = FindObject(type.behaviorTree, "OLBTBehaviorTree")) SetObj(pawn, "BehaviorTree", bt);
+                UObject* bt = LoadObjectByPath(type.behaviorTree, "OLBTBehaviorTree");
+                if (!bt) bt = FindObject(ShortName(type.behaviorTree).c_str(), "OLBTBehaviorTree");
+                if (bt) SetObj(pawn, "BehaviorTree", bt);
                 else Notify("No AI behaviour for this enemy is loaded here - it may stand still.", 4.f);
             }
-            if (UObject* mesh = FindMeshByHint(type.meshHint)) {
-                UObject* comp = Obj(pawn, "Mesh");
-                if (comp && Obj(comp, "SkeletalMesh") != mesh) SetSkeletalMesh(comp, mesh);
+            if (type.voAsset && !Obj(pawn, "VOAsset")) {
+                if (UObject* vo = LoadObjectByPath(type.voAsset, "OLAIContextualVOAsset")) SetObj(pawn, "VOAsset", vo);
+            }
+        }
+        // Characters that share a class (Trager, the Groom, Father Martin...)
+        // differ only by their mesh.
+        if (!r.clone && (type.mesh || (!tmpl && type.meshHint))) {
+            UObject* mesh = type.mesh ? LoadObjectByPath(type.mesh, "SkeletalMesh") : nullptr;
+            if (!mesh) mesh = FindMeshByHint(type.meshHint);
+            UObject* comp = Obj(pawn, "Mesh");
+            if (mesh && comp && Obj(comp, "SkeletalMesh") != mesh) SetSkeletalMesh(comp, mesh);
+        }
+        if (UObject* comp = Obj(pawn, "Mesh")) {
+            if (!Obj(comp, "SkeletalMesh")) {
+                UObject* fallback = tmpl ? Obj(Obj(tmpl, "Mesh"), "SkeletalMesh") : nullptr;
+                if (fallback) SetSkeletalMesh(comp, fallback);
+                else Notify(std::string(type.label) + ": model not loaded in this level - it may be invisible.", 4.f);
             }
         }
         SetBool(pawn, "Modifiers.bShouldAttack", r.attack);

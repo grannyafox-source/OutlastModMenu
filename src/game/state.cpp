@@ -75,16 +75,16 @@ void EnsureInit() {
     X(nightVisionRange) X(nightVisionBrightness) X(gameSpeed) X(enemyTimeScale) X(enemySpeedMultiplier)   \
     X(enemyDamageMultiplier) X(gamma) X(shadowsMul) X(midtonesMul) X(highlightsMul) X(desaturationMul)    \
     X(darkLightRadius) X(darkLightBrightness) X(fpsLimit) X(espMaxDistance) X(hobbleIntensity)            \
-    X(hordeInterval) X(uiScale)
+    X(hordeInterval) X(uiScale) X(rouletteInterval)
 
 #define OMM_PERSISTED_INTS(X) X(maxHealth) X(batteryCount) X(maxBatteries) X(walkingStyle) X(hordeMaxEnemies) \
-    X(hordeEnemyType) X(menuButtonCorner)
+    X(hordeEnemyType) X(menuButtonCorner) X(perfLevel)
 
 #define OMM_PERSISTED_BOOLS(X)                                                                              \
     X(gammaOverride) X(brightnessOverride) X(darkLightOverride) X(noFilmGrain) X(noVignette) X(noHurtEffect) \
     X(tintOverride) X(hideCrosshair) X(fpsLimitOverride) X(espEnabled) X(espShowDistance) X(espShowLabels)   \
     X(espTracers) X(espHideCollected) X(espOffscreenArrows) X(autoApplyModelSwaps) X(pauseWhileMenuOpen)     \
-    X(showModMenuButton) X(notifications) X(fovOverride)
+    X(showModMenuButton) X(notifications) X(fovOverride) X(rouletteIncludeMain) X(rouletteIncludeDlc)
 }  // namespace
 
 namespace state {
