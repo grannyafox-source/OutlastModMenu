@@ -1,0 +1,10 @@
+; Exports for MSVC (both architectures) and 64-bit MinGW.
+LIBRARY dinput8
+EXPORTS
+    DirectInput8Create=Proxy_DirectInput8Create
+    DllCanUnloadNow=Proxy_DllCanUnloadNow PRIVATE
+    DllGetClassObject=Proxy_DllGetClassObject PRIVATE
+    DllRegisterServer=Proxy_DllRegisterServer PRIVATE
+    DllUnregisterServer=Proxy_DllUnregisterServer PRIVATE
+    GetdfDIJoystick=Proxy_GetdfDIJoystick
+    OMM_GetApi
